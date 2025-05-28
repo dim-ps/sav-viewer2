@@ -1,64 +1,96 @@
 import streamlit as st
-import pyreadstat
 import pandas as pd
 import plotly.express as px
 import tempfile
+import pyreadstat
 
-st.set_page_config(page_title="SPSS (.sav) File Viewer", layout="wide")
+st.set_page_config(page_title="LFS SPSS Viewer", layout="wide")
+st.title("📊 Greek Labour Force Survey (.sav) Viewer")
 
-st.title("📊 SPSS (.sav) File Viewer and Visualizer")
+# Load variable description mapping
+desc_path = "LFS_VARIABLE DESCRIPTION_PUF_1987_2024_GR.xlsx"
+desc_df = pd.read_excel(desc_path)
 
-# File upload
-uploaded_file = st.file_uploader("Upload a .sav file", type="sav")
+# Extract mapping: 2021+ code → Greek label
+mapping_df = desc_df[['2021+', 'Περιγραφή μεταβλητής']].dropna()
+var_map = dict(zip(mapping_df['2021+'], mapping_df['Περιγραφή μεταβλητής']))
 
-if uploaded_file is not None:
+# File uploader
+uploaded_file = st.file_uploader("Upload LFS .sav file", type="sav")
+
+if uploaded_file:
     try:
-        # Write uploaded file to a temporary file
+        # Save to temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".sav") as tmp:
             tmp.write(uploaded_file.read())
             tmp_path = tmp.name
 
-        # Read .sav file from temp path
+        # Load data
         df, meta = pyreadstat.read_sav(tmp_path)
-        st.success("File loaded successfully!")
+        df.rename(columns=lambda col: var_map.get(col, col), inplace=True)
 
-        # Show preview
-        st.subheader("🔍 Data Preview")
-        st.dataframe(df.head())
+        st.success("✅ File loaded successfully!")
 
-        # Summary statistics
+        # Sidebar Filters
+        st.sidebar.header("🔎 Filter Data")
+        for col in df.select_dtypes(include=['object', 'category']).columns:
+            options = df[col].dropna().unique().tolist()
+            selected = st.sidebar.multiselect(f"Filter by: {col}", options)
+            if selected:
+                df = df[df[col].isin(selected)]
+
+        # Data preview
+        st.subheader("📋 Data Preview")
+        st.dataframe(df.head(100))
+
+        # Summary
         st.subheader("📈 Summary Statistics")
-        st.write(df.describe())
+        st.write(df.describe(include='all'))
 
-        # Data types
-        st.subheader("🧾 Column Info")
-        st.write(df.dtypes)
-
-        # CSV Export
-        csv = df.to_csv(index=False).encode("utf-8")
+        # Download filtered data
         st.download_button(
-            label="📥 Download data as CSV",
-            data=csv,
-            file_name="exported_data.csv",
+            "📥 Download filtered data as CSV",
+            data=df.to_csv(index=False).encode("utf-8"),
+            file_name="filtered_data.csv",
             mime="text/csv"
         )
 
         # Visualization
-        st.subheader("📊 Data Visualization")
+        st.subheader("📊 Visualization")
+        all_cols = df.columns.tolist()
         num_cols = df.select_dtypes(include='number').columns.tolist()
-        cat_cols = df.select_dtypes(include='object').columns.tolist()
+        cat_cols = df.select_dtypes(exclude='number').columns.tolist()
 
-        if num_cols or cat_cols:
-            col_x = st.selectbox("Select X axis", num_cols + cat_cols)
-            col_y = st.selectbox("Select Y axis", num_cols)
+        chart_type = st.selectbox("Select chart type", ["Histogram", "Bar Chart", "Scatter", "Box Plot"])
 
-            if col_x and col_y:
-                fig = px.scatter(df, x=col_x, y=col_y, title=f"{col_y} vs {col_x}")
-                st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("No numeric or categorical columns available for plotting.")
+        if chart_type == "Histogram":
+            col = st.selectbox("Select numeric column", num_cols)
+            fig = px.histogram(df, x=col)
+        elif chart_type == "Bar Chart":
+            col = st.selectbox("Select categorical column", cat_cols)
+            fig = px.bar(df[col].value_counts().reset_index(), x="index", y=col)
+        elif chart_type == "Scatter":
+            x = st.selectbox("X axis", num_cols)
+            y = st.selectbox("Y axis", num_cols)
+            fig = px.scatter(df, x=x, y=y)
+        elif chart_type == "Box Plot":
+            x = st.selectbox("Category", cat_cols)
+            y = st.selectbox("Value", num_cols)
+            fig = px.box(df, x=x, y=y)
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Group & Aggregate
+        st.subheader("📊 Group & Aggregate")
+        group_col = st.selectbox("Group by (categorical)", cat_cols)
+        agg_col = st.selectbox("Aggregate column (numeric)", num_cols)
+        agg_func = st.selectbox("Aggregation function", ["mean", "sum", "count", "median", "min", "max"])
+
+        if st.button("Compute Grouped Table"):
+            grouped = df.groupby(group_col)[agg_col].agg(agg_func).reset_index()
+            st.dataframe(grouped)
 
     except Exception as e:
-        st.error(f"❌ Error loading file: {e}")
+        st.error(f"❌ Error: {e}")
 else:
-    st.info("📂 Please upload a .sav file to get started.")
+    st.info("📂 Please upload a .sav file to begin.")
