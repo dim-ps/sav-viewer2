@@ -117,42 +117,7 @@ if uploaded_files:
             grouped = df.groupby(group_col)[agg_col].agg(agg_func).reset_index()
             st.dataframe(grouped)
 
-        
-    st.subheader("🗺️ Regional Map (NUTS 2 - YPA_R)")
-
-    # Choropleth map generation
-    try:
-        import geopandas as gpd
-
-        # Load the shapefile
-        shapefile = "NUTS_RG_01M_2021_4326.shp"
-        gdf = gpd.read_file(shapefile)
-
-        # Filter NUTS level 2
-        gdf = gdf[gdf['LEVL_CODE'] == 2]
-
-        # Ensure YPA_R match
-        if "YPA_R" in df.columns:
-            # Aggregation input
-            map_value_col = st.selectbox("Column to map (numeric)", num_cols)
-            map_agg_func = st.selectbox("Aggregation method", ["mean", "sum", "count"])
-            region_stats = df.groupby("YPA_R")[map_value_col].agg(map_agg_func).reset_index()
-            region_stats.columns = ["NUTS_ID", "value"]
-
-            # Merge to GeoDataFrame
-            gdf_map = gdf.merge(region_stats, on="NUTS_ID")
-
-            # Plot map
-            st.map(gdf_map.set_geometry("geometry").to_crs(epsg=4326))
-            st.write(gdf_map[["NUTS_ID", "value"]])
-        else:
-            st.warning("Column 'YPA_R' not found in dataset.")
-
-    except Exception as e:
-        st.warning(f"Could not load map: {e}")
-
-    st.subheader("📖 Codebook Viewer")
-    
+        st.subheader("📖 Codebook Viewer")
         codebook = []
         for var, labels in all_value_labels.items():
             greek_name = var_map.get(var, "")
