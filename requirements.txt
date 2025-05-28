@@ -3,3 +3,4 @@ pyreadstat
 pandas
 plotly
 openpyxl
+geopandas

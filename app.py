@@ -5,8 +5,28 @@ import tempfile
 import pyreadstat
 import os
 
-st.set_page_config(page_title="LFS Multi-SPSS Viewer", layout="wide")
-st.title("📊 Greek Labour Force Survey (.sav) Viewer with Multi-File Merge")
+st.set_page_config(page_title="SPSS (.sav) viewer", layout="wide")
+st.title("📊 SPSS (.sav) viewer")
+
+# --- Guide of Use ---
+with st.expander("ℹ️ How to use this app"):
+    st.markdown("""
+**Upload Instructions:**\n\nThis tool is ideal for exploring open-access public microdata from official surveys such as:\n- 🟦 Labour Force Survey (LFS)\n- 🟨 European Union Statistics on Income and Living Conditions (EU-SILC)\n
+- Upload one or more `.sav` files (from the Greek Labour Force Survey or other sources).
+- Also include the variable description file: `LFS_VARIABLE DESCRIPTION_PUF_1987_2024_GR.xlsx`.
+
+**What This App Does:**
+- Automatically reads and merges multiple `.sav` files with the same structure.
+- Applies variable name replacements using the Greek dictionary.
+- Decodes value labels (e.g., gender codes into words like Άνδρας, Γυναίκα).
+- Lets you explore, visualize, and export your filtered dataset.
+- Includes a codebook viewer with searchable descriptions.
+
+**Recommended:**
+- Upload datasets from the same structure/year group.
+- Use the sidebar to filter by any categorical field (region, gender, etc.).
+- Check the "Group & Aggregate" tab for summaries.
+""")
 
 # Load variable description mapping from Excel
 desc_path = "LFS_VARIABLE DESCRIPTION_PUF_1987_2024_GR.xlsx"
@@ -89,7 +109,7 @@ if uploaded_files:
         st.plotly_chart(fig, use_container_width=True)
 
         st.subheader("📊 Group & Aggregate")
-        group_col = st.selectbox("Group by (categorical)", cat_cols)
+        group_col = st.selectbox("Group by (categorical)", cat_cols, index=cat_cols.index("YPA_R") if "YPA_R" in cat_cols else 0)
         agg_col = st.selectbox("Aggregate column (numeric)", num_cols)
         agg_func = st.selectbox("Aggregation function", ["mean", "sum", "count", "median", "min", "max"])
 
@@ -97,7 +117,42 @@ if uploaded_files:
             grouped = df.groupby(group_col)[agg_col].agg(agg_func).reset_index()
             st.dataframe(grouped)
 
-        st.subheader("📖 Codebook Viewer")
+        
+    st.subheader("🗺️ Regional Map (NUTS 2 - YPA_R)")
+
+    # Choropleth map generation
+    try:
+        import geopandas as gpd
+
+        # Load the shapefile
+        shapefile = "NUTS_RG_01M_2021_4326.shp"
+        gdf = gpd.read_file(shapefile)
+
+        # Filter NUTS level 2
+        gdf = gdf[gdf['LEVL_CODE'] == 2]
+
+        # Ensure YPA_R match
+        if "YPA_R" in df.columns:
+            # Aggregation input
+            map_value_col = st.selectbox("Column to map (numeric)", num_cols)
+            map_agg_func = st.selectbox("Aggregation method", ["mean", "sum", "count"])
+            region_stats = df.groupby("YPA_R")[map_value_col].agg(map_agg_func).reset_index()
+            region_stats.columns = ["NUTS_ID", "value"]
+
+            # Merge to GeoDataFrame
+            gdf_map = gdf.merge(region_stats, on="NUTS_ID")
+
+            # Plot map
+            st.map(gdf_map.set_geometry("geometry").to_crs(epsg=4326))
+            st.write(gdf_map[["NUTS_ID", "value"]])
+        else:
+            st.warning("Column 'YPA_R' not found in dataset.")
+
+    except Exception as e:
+        st.warning(f"Could not load map: {e}")
+
+    st.subheader("📖 Codebook Viewer")
+    
         codebook = []
         for var, labels in all_value_labels.items():
             greek_name = var_map.get(var, "")
