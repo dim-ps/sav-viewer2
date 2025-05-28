@@ -31,7 +31,7 @@ if uploaded_file:
 
         # Replace coded values using metadata
         for var, labels in meta.variable_value_labels.items():
-            var_name = var_map.get(var, var)  # renamed column
+            var_name = var_map.get(var, var)
             if var_name in df.columns:
                 df[var_name] = df[var_name].map(labels)
 
@@ -95,6 +95,25 @@ if uploaded_file:
         if st.button("Compute Grouped Table"):
             grouped = df.groupby(group_col)[agg_col].agg(agg_func).reset_index()
             st.dataframe(grouped)
+
+        # Codebook Viewer
+        st.subheader("📖 Codebook Viewer")
+        codebook = []
+
+        for var, labels in meta.variable_value_labels.items():
+            greek_name = var_map.get(var, "")
+            label_str = "; ".join([f"{k} = {v}" for k, v in labels.items()])
+            codebook.append({"Variable Code": var, "Label": greek_name, "Values": label_str})
+
+        codebook_df = pd.DataFrame(codebook)
+        search_term = st.text_input("Search codebook (variable or description):")
+        if search_term:
+            codebook_df = codebook_df[
+                codebook_df.apply(lambda row: search_term.lower() in str(row["Variable Code"]).lower()
+                                                  or search_term.lower() in str(row["Label"]).lower(), axis=1)
+            ]
+
+        st.dataframe(codebook_df)
 
     except Exception as e:
         st.error(f"❌ Error: {e}")
