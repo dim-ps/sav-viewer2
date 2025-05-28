@@ -2,3 +2,4 @@ streamlit
 pyreadstat
 pandas
 plotly
+openpyxl
