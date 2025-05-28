@@ -2,7 +2,7 @@ import streamlit as st
 import pyreadstat
 import pandas as pd
 import plotly.express as px
-import io
+import tempfile
 
 st.set_page_config(page_title="SPSS (.sav) File Viewer", layout="wide")
 
@@ -13,9 +13,13 @@ uploaded_file = st.file_uploader("Upload a .sav file", type="sav")
 
 if uploaded_file is not None:
     try:
-        # Read .sav file from upload using BytesIO
-        bytes_data = uploaded_file.read()
-        df, meta = pyreadstat.read_sav(io.BytesIO(bytes_data))
+        # Write uploaded file to a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".sav") as tmp:
+            tmp.write(uploaded_file.read())
+            tmp_path = tmp.name
+
+        # Read .sav file from temp path
+        df, meta = pyreadstat.read_sav(tmp_path)
         st.success("File loaded successfully!")
 
         # Show preview
