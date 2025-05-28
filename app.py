@@ -7,29 +7,35 @@ import pyreadstat
 st.set_page_config(page_title="LFS SPSS Viewer", layout="wide")
 st.title("📊 Greek Labour Force Survey (.sav) Viewer")
 
-# Load variable description mapping
+# Load variable description mapping from Excel
 desc_path = "LFS_VARIABLE DESCRIPTION_PUF_1987_2024_GR.xlsx"
 desc_df = pd.read_excel(desc_path)
-
-# Extract mapping: 2021+ code → Greek label
 mapping_df = desc_df[['2021+', 'Περιγραφή μεταβλητής']].dropna()
 var_map = dict(zip(mapping_df['2021+'], mapping_df['Περιγραφή μεταβλητής']))
 
-# File uploader
+# Upload SAV file
 uploaded_file = st.file_uploader("Upload LFS .sav file", type="sav")
 
 if uploaded_file:
     try:
-        # Save to temp file
+        # Save uploaded SAV file to temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".sav") as tmp:
             tmp.write(uploaded_file.read())
             tmp_path = tmp.name
 
-        # Load data
+        # Read SAV with value labels
         df, meta = pyreadstat.read_sav(tmp_path)
+
+        # Rename columns using Excel variable names
         df.rename(columns=lambda col: var_map.get(col, col), inplace=True)
 
-        st.success("✅ File loaded successfully!")
+        # Replace coded values using metadata
+        for var, labels in meta.variable_value_labels.items():
+            var_name = var_map.get(var, var)  # renamed column
+            if var_name in df.columns:
+                df[var_name] = df[var_name].map(labels)
+
+        st.success("✅ File loaded and decoded successfully!")
 
         # Sidebar Filters
         st.sidebar.header("🔎 Filter Data")
@@ -39,15 +45,15 @@ if uploaded_file:
             if selected:
                 df = df[df[col].isin(selected)]
 
-        # Data preview
+        # Data Preview
         st.subheader("📋 Data Preview")
         st.dataframe(df.head(100))
 
-        # Summary
+        # Summary Statistics
         st.subheader("📈 Summary Statistics")
         st.write(df.describe(include='all'))
 
-        # Download filtered data
+        # CSV Export
         st.download_button(
             "📥 Download filtered data as CSV",
             data=df.to_csv(index=False).encode("utf-8"),
