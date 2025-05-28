@@ -3,9 +3,10 @@ import pandas as pd
 import plotly.express as px
 import tempfile
 import pyreadstat
+import os
 
-st.set_page_config(page_title="LFS SPSS Viewer", layout="wide")
-st.title("📊 Greek Labour Force Survey (.sav) Viewer")
+st.set_page_config(page_title="LFS Multi-SPSS Viewer", layout="wide")
+st.title("📊 Greek Labour Force Survey (.sav) Viewer with Multi-File Merge")
 
 # Load variable description mapping from Excel
 desc_path = "LFS_VARIABLE DESCRIPTION_PUF_1987_2024_GR.xlsx"
@@ -13,31 +14,37 @@ desc_df = pd.read_excel(desc_path)
 mapping_df = desc_df[['2021+', 'Περιγραφή μεταβλητής']].dropna()
 var_map = dict(zip(mapping_df['2021+'], mapping_df['Περιγραφή μεταβλητής']))
 
-# Upload SAV file
-uploaded_file = st.file_uploader("Upload LFS .sav file", type="sav")
+# Upload multiple SAV files
+uploaded_files = st.file_uploader("Upload one or more LFS .sav files", type="sav", accept_multiple_files=True)
 
-if uploaded_file:
+if uploaded_files:
     try:
-        # Save uploaded SAV file to temp file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".sav") as tmp:
-            tmp.write(uploaded_file.read())
-            tmp_path = tmp.name
+        combined_data = []
+        all_value_labels = {}
 
-        # Read SAV with value labels
-        df, meta = pyreadstat.read_sav(tmp_path)
+        for uploaded_file in uploaded_files:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".sav") as tmp:
+                tmp.write(uploaded_file.read())
+                tmp_path = tmp.name
 
-        # Rename columns using Excel variable names
+            df, meta = pyreadstat.read_sav(tmp_path)
+            df["source_file"] = os.path.basename(uploaded_file.name)
+
+            for var, labels in meta.variable_value_labels.items():
+                all_value_labels[var] = labels
+
+            combined_data.append(df)
+
+        df = pd.concat(combined_data, ignore_index=True)
         df.rename(columns=lambda col: var_map.get(col, col), inplace=True)
 
-        # Replace coded values using metadata
-        for var, labels in meta.variable_value_labels.items():
+        for var, labels in all_value_labels.items():
             var_name = var_map.get(var, var)
             if var_name in df.columns:
                 df[var_name] = df[var_name].map(labels)
 
-        st.success("✅ File loaded and decoded successfully!")
+        st.success("✅ All files loaded and combined successfully!")
 
-        # Sidebar Filters
         st.sidebar.header("🔎 Filter Data")
         for col in df.select_dtypes(include=['object', 'category']).columns:
             options = df[col].dropna().unique().tolist()
@@ -45,25 +52,20 @@ if uploaded_file:
             if selected:
                 df = df[df[col].isin(selected)]
 
-        # Data Preview
         st.subheader("📋 Data Preview")
         st.dataframe(df.head(100))
 
-        # Summary Statistics
         st.subheader("📈 Summary Statistics")
         st.write(df.describe(include='all'))
 
-        # CSV Export
         st.download_button(
             "📥 Download filtered data as CSV",
             data=df.to_csv(index=False).encode("utf-8"),
-            file_name="filtered_data.csv",
+            file_name="combined_filtered_data.csv",
             mime="text/csv"
         )
 
-        # Visualization
         st.subheader("📊 Visualization")
-        all_cols = df.columns.tolist()
         num_cols = df.select_dtypes(include='number').columns.tolist()
         cat_cols = df.select_dtypes(exclude='number').columns.tolist()
 
@@ -86,7 +88,6 @@ if uploaded_file:
 
         st.plotly_chart(fig, use_container_width=True)
 
-        # Group & Aggregate
         st.subheader("📊 Group & Aggregate")
         group_col = st.selectbox("Group by (categorical)", cat_cols)
         agg_col = st.selectbox("Aggregate column (numeric)", num_cols)
@@ -96,15 +97,12 @@ if uploaded_file:
             grouped = df.groupby(group_col)[agg_col].agg(agg_func).reset_index()
             st.dataframe(grouped)
 
-        # Codebook Viewer
         st.subheader("📖 Codebook Viewer")
         codebook = []
-
-        for var, labels in meta.variable_value_labels.items():
+        for var, labels in all_value_labels.items():
             greek_name = var_map.get(var, "")
             label_str = "; ".join([f"{k} = {v}" for k, v in labels.items()])
             codebook.append({"Variable Code": var, "Label": greek_name, "Values": label_str})
-
         codebook_df = pd.DataFrame(codebook)
         search_term = st.text_input("Search codebook (variable or description):")
         if search_term:
@@ -112,10 +110,9 @@ if uploaded_file:
                 codebook_df.apply(lambda row: search_term.lower() in str(row["Variable Code"]).lower()
                                                   or search_term.lower() in str(row["Label"]).lower(), axis=1)
             ]
-
         st.dataframe(codebook_df)
 
     except Exception as e:
         st.error(f"❌ Error: {e}")
 else:
-    st.info("📂 Please upload a .sav file to begin.")
+    st.info("📂 Please upload one or more .sav files to begin.")
